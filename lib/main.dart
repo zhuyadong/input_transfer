@@ -1,7 +1,40 @@
+import 'dart:ffi';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
+import 'package:win32/win32.dart';
 
-void main() {
+SendPort? hookSendPort;
+ReceivePort mainRecvPort = ReceivePort();
+
+void main() async {
+  await Isolate.spawn(hookIsolate, mainRecvPort.sendPort);
+  // hookSendPort = await mainRecvPort.single;
   runApp(const MyApp());
+}
+
+int lowLevelKeyboardProc(int nCode, int wParam, int lParam) {
+  Pointer<KBDLLHOOKSTRUCT> ks = Pointer.fromAddress(lParam);
+  if (ks.ref.flags == 128 || ks.ref.flags == 129) {
+    switch(ks.ref.vkCode) {
+      case 0x30 || 0x60:
+        print('--');
+      case 0x31 || 0x61:
+        print('++');
+    }
+  }
+
+  return CallNextHookEx(0, nCode, wParam, lParam);
+}
+
+void hookIsolate(SendPort sendPort){
+  final receivePort = ReceivePort();
+  sendPort.send(receivePort.sendPort);
+  SetWindowsHookEx(WH_KEYBOARD_LL, Pointer.fromFunction(lowLevelKeyboardProc, 0), GetModuleHandle(nullptr), 0);
+  final msg = wsalloc(1024) as Pointer<MSG>;
+  while (GetMessage(msg, NULL, 0, 0) != 0) {
+    TranslateMessage(msg);
+    DispatchMessage(msg);
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -53,6 +86,7 @@ class MyHomePage extends StatefulWidget {
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
+
 
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
